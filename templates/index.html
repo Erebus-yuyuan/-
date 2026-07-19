@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}首页 - 用户管理系统{% endblock %}
+
+{% block content %}
+<div class="card">
+    {% if username and user %}
+        <h2 class="card-title">欢迎回来，{{ username }}！</h2>
+        {% if success %}
+            <div class="success-message">{{ success }}</div>
+        {% endif %}
+        <div class="user-info">
+            <h3>用户信息</h3>
+            <ul class="info-list">
+                <li><span class="info-label">用户名：</span><span class="info-value">{{ user.username }}</span></li>
+                <li><span class="info-label">邮箱：</span><span class="info-value">{{ user.email }}</span></li>
+                <li><span class="info-label">手机：</span><span class="info-value">{{ user.phone }}</span></li>
+                <li><span class="info-label">角色：</span><span class="info-value">{{ user.role }}</span></li>
+                <li><span class="info-label">余额：</span><span class="info-value">{{ user.balance }}</span></li>
+            </ul>
+        </div>
+        <div class="action-bar">
+            <a href="/change-password" class="btn btn-primary" style="margin-right: 8px;">修改密码</a>
+            <a href="/logout" class="btn btn-danger">退出登录</a>
+        </div>
+    {% else %}
+        <h2 class="card-title">欢迎来到用户管理系统</h2>
+        <p class="welcome-text">请先登录以查看您的信息。</p>
+        <div class="action-bar">
+            <a href="/login" class="btn btn-primary">前往登录</a>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
