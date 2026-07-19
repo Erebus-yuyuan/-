@@ -487,6 +487,6 @@ run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
 run.font.size = Pt(10)
 
 # ── 保存 ──
-output_path = '/opt/Class01/安全漏洞修复报告_V2.0.docx'
+output_path = '/opt/Class01/security_report_v2.0.docx'
 doc.save(output_path)
 print(f'Word 文档已生成：{output_path}')
