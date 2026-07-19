@@ -185,4 +185,5 @@ curl -s http://127.0.0.1:5000/console 2>/dev/null
 ---
 
 > **项目运行**：`cd /opt/Class01 && python app.py` → `http://0.0.0.0:5000`（外部主机请替换为实际 IP）  
+> **Word 版报告**：[security_report_v2.0.docx](https://raw.githubusercontent.com/Erebus-yuyuan/-/main/security_report_v2.0.docx)  
 > **生产建议**：使用 `gunicorn -w 4 -b 127.0.0.1:5000 app:app` 部署，并配置反向代理（Nginx/Caddy）处理 HTTPS。
