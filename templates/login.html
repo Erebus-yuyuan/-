@@ -9,6 +9,10 @@
         {% if error %}
             <div class="error-message">{{ error }}</div>
         {% endif %}
+        {% if success %}
+            <div class="success-message">{{ success }}</div>
+        {% endif %}
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <div class="form-group">
             <label for="username">用户名</label>
             <input type="text" id="username" name="username" class="form-input" placeholder="请输入用户名" required>

@@ -5,3 +5,6 @@ __pycache__/
 *.swp
 *.swo
 *~
+
+# SQLite database (user data)
+data/
