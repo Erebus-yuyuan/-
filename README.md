@@ -28,6 +28,18 @@ cd /opt/Class01/ && python3 app.py
 - 用户注册（带 CSRF 防护、参数化查询）
 - 修改密码（需校验旧密码、同步更新数据库）
 - 用户信息展示（用户名、邮箱、手机、角色、余额）
+- **用户头像上传（7 层安全加固）**
+  - 扩展名白名单（仅允许图片格式）
+  - MIME 类型白名单
+  - 文件魔数校验（PNG/JPEG/GIF/BMP/WebP）
+  - 路径遍历防护
+  - 条件竞争防护（原子重命名）
+  - CVE-2017-15715 换行符绕过防护
+  - 全局安全响应头（XSS/点击劫持防护）
+- **头像展示**
+  - 导航栏右上角圆形头像
+  - 首页用户信息区大头像
+  - 重启后头像持久化（SQLite）
 - CSRF Token 保护（所有 POST 表单）
 - 密码哈希存储（bcrypt）
 - 随机 Secret Key（256位）
@@ -36,9 +48,7 @@ cd /opt/Class01/ && python3 app.py
 ## 报告文档
 
 - [Day3 安全漏洞修复报告](day3漏洞报告.md)
-- [安全漏洞修复报告 (Word)](security_report_v2.0.docx)
-- [安全漏洞修复报告 (Markdown)](SECURITY_REPORT.md)
-- [WAF 绕过检测报告](WAF_Bypass_Report.md)
+- [Day4 文件上传漏洞修复报告](day4-文件上传漏洞修复报告.md)
 
 ## 项目结构
 
@@ -46,15 +56,17 @@ cd /opt/Class01/ && python3 app.py
 /opt/Class01/
 ├── app.py                  # Flask 主程序
 ├── templates/              # HTML 模板
-│   ├── base.html           # 基础布局
+│   ├── base.html           # 基础布局（导航栏含头像）
 │   ├── login.html          # 登录页
 │   ├── register.html       # 注册页
-│   ├── index.html          # 首页（用户信息）
+│   ├── index.html          # 首页（用户信息+头像）
+│   ├── upload.html         # 头像上传页
 │   └── change_password.html# 修改密码
-├── static/css/style.css    # 样式文件
+├── static/
+│   └── css/style.css       # 样式文件（含头像样式）
+├── uploads/                # 用户上传文件目录（static外）
+├── day4-文件上传漏洞修复报告.md  # 漏洞安全审计报告
 ├── day3漏洞报告.md         # 安全审计报告
-├── SECURITY_REPORT.md      # 安全修复报告
-├── WAF_Bypass_Report.md    # WAF 绕过报告
 ├── hunter_search.py        # 鹰图搜索脚本
 └── generate_report.py      # 报告生成工具
 ```

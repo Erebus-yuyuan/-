@@ -1,10 +1,14 @@
 import os
+import re
+import uuid
 import time
 import copy
 import sqlite3
 import secrets
-from flask import Flask, render_template, request, redirect, session
+from urllib.parse import unquote
+from flask import Flask, render_template, request, redirect, session, send_from_directory, abort
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.exceptions import RequestEntityTooLarge
 
 app = Flask(__name__)
 
@@ -20,7 +24,115 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
     SESSION_COOKIE_SECURE=False,  # 开发环境无 HTTPS，保持 False
+    MAX_CONTENT_LENGTH=16 * 1024 * 1024,  # 最大上传文件 16MB
 )
+
+# ===== 上传文件存储目录（存放于 static 之外，防止直接静态访问） =====
+UPLOAD_DIR = os.path.join(app.root_path, "uploads")
+
+# ===== 扩展名白名单（仅允许图片格式） =====
+ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'}
+
+# ===== MIME 类型白名单（辅助校验） =====
+ALLOWED_MIME_TYPES = {
+    'image/png',
+    'image/jpeg',
+    'image/gif',
+    'image/bmp',
+    'image/webp',
+    'image/x-icon',
+}
+
+# ===== 文件魔数签名（用于文件内容真实性校验） =====
+IMAGE_SIGNATURES = {
+    b'\x89PNG\r\n\x1a\n': '.png',
+    b'\xff\xd8\xff': '.jpg',
+    b'GIF89a': '.gif',
+    b'GIF87a': '.gif',
+    b'BM': '.bmp',
+}
+
+# WebP 特殊处理：前 4 字节 RIFF，偏移 8 处 WEBP
+WEBP_SIGNATURE = b'RIFF'
+WEBP_MARKER = b'WEBP'
+
+
+def sanitize_filename(filename):
+    """安全清洗文件名，防护列表：
+       - 路径遍历（../ 等）
+       - 空字节截断（\x00） + URL编码空字节（%00）
+       - 换行符/回车符绕过（\x0a / \x0d，CVE-2017-15715）
+       - NTFS 文件流绕过（::$DATA）
+       - 大小写绕过（.PhP → .php）
+       - 空格/点绕过（尾随空格和点）
+       - 双扩展名绕过（.php.jpg → 拒绝）
+       - .htaccess / .user.ini 配置文件上传
+       - 危险字符注入"""
+    # 先做 URL 解码，防止 %00、%0a、%0d 等编码绕过
+    filename = unquote(filename)
+    # 统一路径分隔符并提取纯文件名
+    filename = filename.replace("\\", "/")
+    filename = os.path.basename(filename)
+    # 移除空字节（包括 URL 解码后的 %00）
+    filename = filename.replace("\x00", "")
+    # 【CVE-2017-15715】移除换行符和回车符（Apache 解析绕过）
+    filename = filename.replace("\n", "").replace("\r", "")
+    # 移除 NTFS 文件流标记
+    if '::$' in filename.upper():
+        filename = filename.split('::$')[0]
+    # 替换危险字符，但保留点（后面单独处理扩展名）
+    filename = re.sub(r'[^\w.\-()\[\] ]', '_', filename)
+    # 确保文件名不为空
+    if not filename or filename.strip() == '':
+        filename = "unnamed"
+    # 【白名单第一步】拒绝上传 .htaccess / .user.ini 等配置文件
+    lowered = filename.lower()
+    if lowered in ('.htaccess', '.user.ini', '.htpasswd') or \
+       lowered.startswith('.ht') or lowered.startswith('.user.'):
+        return None
+    # 剥离文件名，获取纯扩展名（取最后一个点后的内容）
+    name_part, ext = os.path.splitext(filename)
+    ext = ext.lower()
+    # 规范化扩展名：将 .jpeg 统一为 .jpg
+    if ext == '.jpeg':
+        ext = '.jpg'
+    filename = name_part + ext
+    # 限制文件名长度
+    if len(filename) > 200:
+        name_part, ext = os.path.splitext(filename)
+        filename = name_part[:196] + ext
+    return filename
+
+
+def get_clean_extension(filename):
+    """提取并规范化文件扩展名（小写，去尾随空格/点）"""
+    _, ext = os.path.splitext(filename)
+    ext = ext.lower().strip().rstrip('.')
+    if not ext:
+        return ''
+    if ext == 'jpeg':
+        ext = 'jpg'
+    # splitext 返回的 ext 已包含前置点（如 .png），无需额外加点
+    return ext
+
+
+def validate_image_content(file_stream):
+    """通过魔数（Magic Number）检测文件内容是否属于图片类型。
+    返回检测到的扩展名（含点），无法识别则返回空字符串"""
+    # 读取文件前 12 字节足够检测所有支持的格式
+    header = file_stream.read(12)
+    file_stream.seek(0)  # 重置指针
+
+    for sig, ext in IMAGE_SIGNATURES.items():
+        if header.startswith(sig):
+            return ext
+
+    # 特殊检测：WebP（RIFF + WEBP）
+    if header[:4] == WEBP_SIGNATURE and header[8:12] == WEBP_MARKER:
+        return '.webp'
+
+    return ''
+
 
 # ===== CSRF 保护辅助函数 =====
 def generate_csrf_token():
@@ -37,6 +149,17 @@ def validate_csrf_token():
         return False
     return True
 
+def sync_session_avatar(username):
+    """将用户的头像 URL 同步到 session 中，返回 avatar_url 或空字符串"""
+    if username and username in USERS:
+        avatar = USERS[username].get("avatar", "")
+        if avatar:
+            session["avatar_url"] = f"/uploads/{avatar}"
+            return session["avatar_url"]
+    session.pop("avatar_url", None)
+    return ""
+
+
 app.jinja_env.globals['csrf_token'] = generate_csrf_token
 
 # ===== 安全加固 2：密码哈希存储 =====
@@ -47,14 +170,16 @@ USERS = {
         "role": "admin",
         "email": "admin@example.com",
         "phone": "13800138000",
-        "balance": 99999
+        "balance": 99999,
+        "avatar": ""
     },
     "alice": {
         "password_hash": generate_password_hash("alice2025"),
         "role": "user",
         "email": "alice@example.com",
         "phone": "13900139001",
-        "balance": 100
+        "balance": 100,
+        "avatar": ""
     },
     # 新增用户（拼音用户名，密码也是拼音）
     "nuannuan": {
@@ -62,35 +187,40 @@ USERS = {
         "role": "user",
         "email": "nuannuan@example.com",
         "phone": "13100000001",
-        "balance": 0
+        "balance": 0,
+        "avatar": ""
     },
     "damiao": {
         "password_hash": generate_password_hash("damiao"),
         "role": "user",
         "email": "damiao@example.com",
         "phone": "13100000002",
-        "balance": 0
+        "balance": 0,
+        "avatar": ""
     },
     "sinaide": {
         "password_hash": generate_password_hash("sinaide"),
         "role": "user",
         "email": "sinaide@example.com",
         "phone": "13100000003",
-        "balance": 0
+        "balance": 0,
+        "avatar": ""
     },
     "weierting": {
         "password_hash": generate_password_hash("weierting"),
         "role": "user",
         "email": "weierting@example.com",
         "phone": "13100000004",
-        "balance": 0
+        "balance": 0,
+        "avatar": ""
     },
     "yuyuan": {
         "password_hash": generate_password_hash("yuyuan"),
         "role": "user",
         "email": "yuyuan@example.com",
         "phone": "13100000005",
-        "balance": 0
+        "balance": 0,
+        "avatar": ""
     }
 }
 
@@ -164,9 +294,15 @@ def init_db():
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             email TEXT,
-            phone TEXT
+            phone TEXT,
+            avatar TEXT DEFAULT ''
         )
     """)
+    # 兼容旧表：如果 avatar 列不存在则添加
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass  # 列已存在
     # 插入默认用户（使用哈希存储密码）
     default_users = [
         ("admin", "admin123", "admin@example.com", "13800138000"),
@@ -184,7 +320,30 @@ def init_db():
             (u, phash, e, ph)
         )
     conn.commit()
+
+    # 从数据库加载已保存的头像信息到 USERS 字典（重启后恢复）
+    c.execute("SELECT username, avatar FROM users WHERE avatar IS NOT NULL AND avatar != ''")
+    for row in c.fetchall():
+        u, a = row
+        if u in USERS:
+            USERS[u]["avatar"] = a
+
     conn.close()
+
+    # 迁移旧文件：将 static/uploads/ 下的已有文件复制到新目录
+    old_upload_dir = os.path.join(app.root_path, "static", "uploads")
+    if os.path.exists(old_upload_dir):
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        for fname in os.listdir(old_upload_dir):
+            old_path = os.path.join(old_upload_dir, fname)
+            new_path = os.path.join(UPLOAD_DIR, fname)
+            if os.path.isfile(old_path) and not os.path.exists(new_path):
+                try:
+                    with open(old_path, 'rb') as src, open(new_path, 'wb') as dst:
+                        dst.write(src.read())
+                except Exception:
+                    pass
+
     print("[init_db] 数据库初始化完成（密码已哈希存储）")
 
 
@@ -194,6 +353,7 @@ def index():
     username = session.get("username")
     user_info = None
     if username and username in USERS:
+        sync_session_avatar(username)
         user_info = safe_user_info(username)
     return render_template("index.html", username=username, user=user_info)
 
@@ -224,6 +384,7 @@ def login():
             # 验证成功
             record_login_attempt(client_ip, username, success=True)
             session["username"] = username
+            sync_session_avatar(username)
             user_info = safe_user_info(username)
             return render_template("index.html", username=username, user=user_info)
         else:
@@ -289,7 +450,8 @@ def register():
             "role": "user",
             "email": email,
             "phone": phone,
-            "balance": 0
+            "balance": 0,
+            "avatar": ""
         }
         conn.close()
         return render_template("login.html", success="注册成功，请登录！")
@@ -348,6 +510,152 @@ def change_password():
                                success="密码修改成功！")
 
     return render_template("change_password.html")
+
+
+@app.route("/upload", methods=["GET", "POST"])
+def upload():
+    """用户头像上传路由（需登录）"""
+    username = session.get("username")
+    if not username:
+        return redirect("/login")
+
+    if request.method == "POST":
+        # CSRF 校验
+        if not validate_csrf_token():
+            return render_template("upload.html", error="表单已过期，请重新提交！")
+
+        # 获取上传文件
+        file = request.files.get("file")
+        if not file or file.filename == "":
+            return render_template("upload.html", error="请选择要上传的文件！")
+
+        # 获取用户提交的原始文件名
+        raw_filename = file.filename
+
+        # ==================== 【安全检测层 1：文件名清洗】 ====================
+        safe_name = sanitize_filename(raw_filename)
+        if safe_name is None:
+            return render_template("upload.html",
+                                   error="禁止上传系统配置文件（.htaccess、.user.ini 等）！")
+
+        # ==================== 【安全检测层 2：扩展名白名单】 ====================
+        ext = get_clean_extension(safe_name)
+        if ext not in ALLOWED_EXTENSIONS:
+            return render_template(
+                "upload.html",
+                error=f"不允许上传 {ext} 格式。仅支持：{', '.join(sorted(ALLOWED_EXTENSIONS))}"
+            )
+
+        # ==================== 【安全检测层 3：MIME 类型辅助校验】 ====================
+        mime = file.content_type or ''
+        if mime and mime not in ALLOWED_MIME_TYPES:
+            return render_template("upload.html",
+                                   error=f"文件类型（{mime}）不被允许，请上传图片文件。")
+
+        # ==================== 【安全检测层 4：文件内容魔数校验】 ====================
+        detected_ext = validate_image_content(file.stream)
+        if not detected_ext:
+            return render_template("upload.html",
+                                   error="文件内容不是有效的图片格式，请上传真实图片文件。")
+        # 魔数检测的扩展名必须与白名单扩展名匹配
+        if detected_ext != ext:
+            return render_template("upload.html",
+                                   error=f"文件扩展名（{ext}）与实际内容（{detected_ext}）不匹配！")
+
+        # ==================== 【安全隔离：用户名前缀防覆盖】 ====================
+        filename = f"{username}_{safe_name}"
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+        # 【条件竞争防护】先保存到临时文件，再原子重命名为目标文件名
+        # 防止攻击者在文件写入完成前发起并发访问
+        tmp_name = f".tmp_{uuid.uuid4().hex}_{filename}"
+        tmp_path = os.path.join(UPLOAD_DIR, tmp_name)
+        file.save(tmp_path)
+        filepath = os.path.join(UPLOAD_DIR, filename)
+        os.rename(tmp_path, filepath)
+
+        # 将头像关联到当前用户（更新内存字典和 SQLite）
+        USERS[username]["avatar"] = filename
+        session["avatar_url"] = f"/uploads/{filename}"
+        try:
+            conn = sqlite3.connect("data/users.db")
+            c = conn.cursor()
+            c.execute("UPDATE users SET avatar = ? WHERE username = ?", (filename, username))
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass  # SQLite 更新失败不阻塞功能
+
+        file_url = f"/uploads/{filename}"
+        return render_template("upload.html", success="文件上传成功！", file_url=file_url)
+
+    return render_template("upload.html")
+
+
+@app.after_request
+def add_security_headers(response):
+    """【安全修复】为所有响应添加安全头"""
+    # 禁用 MIME 类型嗅探
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    # 防止点击劫持
+    response.headers["X-Frame-Options"] = "DENY"
+    # 启用 XSS 过滤器（老旧浏览器兼容）
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    # 禁止浏览器自动检测和引用不安全的资源
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
+
+@app.before_request
+def block_static_uploads_direct_access():
+    """【安全修复】拦截对 /static/uploads/ 的直接静态文件访问。
+    所有已上传文件必须通过 /uploads/<filename> 专用路由访问，
+    该路由会进行 Content-Type 安全控制。"""
+    if request.path.startswith('/static/uploads/'):
+        abort(404)
+
+
+@app.route("/uploads/<filename>")
+def serve_upload(filename):
+    """【安全修复】通过专用路由安全地提供上传文件。
+     - 二次路径清洗防遍历（含 %00 URL 路径截断防护）
+     - 禁用 MIME嗅探
+     - 非图片文件强制 octet-stream 下载"""
+    # 【%00 路径截断防护】URL 路径中的 %00 会被浏览/some中间件解码，
+    # 但 Flask 收到时可能是已解码的 \x00 或未解码的 %00
+    # 先做一次 URL 解码清洗
+    filename = unquote(filename)
+    # 防止路径遍历：重新清洗文件名
+    safe_name = sanitize_filename(filename)
+    if safe_name is None:
+        abort(404)
+    filepath = os.path.join(UPLOAD_DIR, safe_name)
+
+    # 安全检查：确保文件在 UPLOAD_DIR 内（二次确认）
+    real_path = os.path.realpath(filepath)
+    if not real_path.startswith(os.path.realpath(UPLOAD_DIR) + os.sep) and \
+       not real_path == os.path.realpath(UPLOAD_DIR):
+        abort(404)
+
+    if not os.path.exists(real_path):
+        abort(404)
+
+    # 使用 send_from_directory 安全地发送文件
+    response = send_from_directory(UPLOAD_DIR, safe_name)
+
+    # 非图片类型文件强制以 application/octet-stream 下载（防止 HTML/SVG XSS）
+    ext = os.path.splitext(safe_name)[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        response.headers["Content-Type"] = "application/octet-stream"
+        response.headers["Content-Disposition"] = f'attachment; filename="{safe_name}"'
+
+    return response
+
+
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    """【安全修复】处理上传文件过大错误（RequestEntityTooLarge）"""
+    return render_template("upload.html", error="文件过大！上传文件大小不能超过 16MB。"), 413
 
 
 if __name__ == "__main__":

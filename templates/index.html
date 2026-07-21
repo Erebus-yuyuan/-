@@ -9,6 +9,12 @@
         {% if success %}
             <div class="success-message">{{ success }}</div>
         {% endif %}
+        {% set avatar_url = session.get('avatar_url') %}
+        {% if avatar_url %}
+            <div class="avatar-section" style="text-align: center; margin-bottom: 20px;">
+                <img src="{{ avatar_url }}" alt="用户头像" class="user-avatar">
+            </div>
+        {% endif %}
         <div class="user-info">
             <h3>用户信息</h3>
             <ul class="info-list">
@@ -21,6 +27,7 @@
         </div>
 
         <div class="action-bar">
+            <a href="/upload" class="btn btn-primary">上传头像</a>
             <a href="/change-password" class="btn btn-primary">修改密码</a>
             <a href="/logout" class="btn btn-danger">退出登录</a>
         </div>

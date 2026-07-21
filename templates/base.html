@@ -12,7 +12,12 @@
         <div class="nav-brand">用户管理系统</div>
         <div class="nav-menu">
             {% if session.get('username') %}
+                {% set avatar_url = session.get('avatar_url') %}
+                {% if avatar_url %}
+                    <img src="{{ avatar_url }}" alt="头像" class="nav-avatar">
+                {% endif %}
                 <span class="nav-welcome">欢迎，{{ session['username'] }}</span>
+                <a href="/upload" class="nav-link">上传头像</a>
                 <a href="/change-password" class="nav-link">修改密码</a>
                 <a href="/logout" class="nav-link">退出</a>
             {% else %}
