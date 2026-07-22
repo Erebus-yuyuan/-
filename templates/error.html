@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block title %}错误 - 用户管理系统{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2 class="card-title">错误</h2>
+    {% if error %}
+        <div class="error-message">{{ error }}</div>
+    {% endif %}
+    <div class="action-bar" style="margin-top: 20px;">
+        <a href="/" class="btn btn-primary">返回首页</a>
+    </div>
+</div>
+{% endblock %}

@@ -1,5 +1,7 @@
 # Flask 用户信息管理系统（安全靶场）
 
+> 版本：越权业务逻辑漏洞
+
 一个基于 Flask 的 Web 安全靶场项目，包含完整的用户管理功能，用于 Web 安全教学与漏洞复现。
 
 ## 快速启动
@@ -28,6 +30,8 @@ cd /opt/Class01/ && python3 app.py
 - 用户注册（带 CSRF 防护、参数化查询）
 - 修改密码（需校验旧密码、同步更新数据库）
 - 用户信息展示（用户名、邮箱、手机、角色、余额）
+- **个人中心**（独立页面，需登录，含权限校验）
+- **账户充值**（仅限本人，金额必须为正数，CSRF 防护）
 - **用户头像上传（7 层安全加固）**
   - 扩展名白名单（仅允许图片格式）
   - MIME 类型白名单
@@ -45,10 +49,18 @@ cd /opt/Class01/ && python3 app.py
 - 随机 Secret Key（256位）
 - 会话安全配置（HttpOnly + SameSite=Lax）
 
+## 权限体系
+
+- **RBAC 装饰器**: `require_login` / `require_role("admin")`
+- 普通用户只能查看和操作自己的资料
+- 管理员可以查看所有用户资料
+- 所有资金操作绑定当前会话用户
+
 ## 报告文档
 
 - [Day3 安全漏洞修复报告](day3漏洞报告.md)
 - [Day4 文件上传漏洞修复报告](day4-文件上传漏洞修复报告.md)
+- [Day5 越权业务逻辑漏洞修复报告](day5-越权业务逻辑漏洞修复报告.docx)
 
 ## 项目结构
 
@@ -61,12 +73,17 @@ cd /opt/Class01/ && python3 app.py
 │   ├── register.html       # 注册页
 │   ├── index.html          # 首页（用户信息+头像）
 │   ├── upload.html         # 头像上传页
-│   └── change_password.html# 修改密码
+│   ├── profile.html        # 个人中心（含充值功能）
+│   ├── change_password.html# 修改密码
+│   └── error.html          # 错误提示页
 ├── static/
 │   └── css/style.css       # 样式文件（含头像样式）
 ├── uploads/                # 用户上传文件目录（static外）
-├── day4-文件上传漏洞修复报告.md  # 漏洞安全审计报告
-├── day3漏洞报告.md         # 安全审计报告
+├── data/
+│   └── users.db            # SQLite 用户数据库
+├── day5-越权业务逻辑漏洞修复报告.docx
+├── day4-文件上传漏洞修复报告.md
+├── day3漏洞报告.md
 ├── hunter_search.py        # 鹰图搜索脚本
 └── generate_report.py      # 报告生成工具
 ```

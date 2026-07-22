@@ -5,6 +5,7 @@ import time
 import copy
 import sqlite3
 import secrets
+from functools import wraps
 from urllib.parse import unquote
 from flask import Flask, render_template, request, redirect, session, send_from_directory, abort
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -162,10 +163,47 @@ def sync_session_avatar(username):
 
 app.jinja_env.globals['csrf_token'] = generate_csrf_token
 
+
+# ===== 基于角色的访问控制（RBAC）装饰器 =====
+def require_login(f):
+    """要求用户已登录的装饰器"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get("username"):
+            return redirect("/login")
+        return f(*args, **kwargs)
+    return decorated_function
+
+def require_role(required_role):
+    """角色校验装饰器，要求当前用户具备指定角色"""
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            username = session.get("username")
+            if not username:
+                return redirect("/login")
+            user_role = USERS.get(username, {}).get("role")
+            if user_role != required_role:
+                return render_template("error.html", error="无权限访问，需要管理员身份")
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+
+@app.context_processor
+def inject_user_id():
+    """向所有模板注入当前登录用户的 user_id"""
+    username = session.get("username")
+    user_id = None
+    if username and username in USERS:
+        user_id = USERS[username].get("id")
+    return dict(current_user_id=user_id)
+
 # ===== 安全加固 2：密码哈希存储 =====
 # 密码不再明文存储，使用 bcrypt 算法哈希
 USERS = {
     "admin": {
+        "id": 1,
         "password_hash": generate_password_hash("admin123"),
         "role": "admin",
         "email": "admin@example.com",
@@ -174,6 +212,7 @@ USERS = {
         "avatar": ""
     },
     "alice": {
+        "id": 2,
         "password_hash": generate_password_hash("alice2025"),
         "role": "user",
         "email": "alice@example.com",
@@ -183,6 +222,7 @@ USERS = {
     },
     # 新增用户（拼音用户名，密码也是拼音）
     "nuannuan": {
+        "id": 3,
         "password_hash": generate_password_hash("nuannuan"),
         "role": "user",
         "email": "nuannuan@example.com",
@@ -191,6 +231,7 @@ USERS = {
         "avatar": ""
     },
     "damiao": {
+        "id": 4,
         "password_hash": generate_password_hash("damiao"),
         "role": "user",
         "email": "damiao@example.com",
@@ -199,6 +240,7 @@ USERS = {
         "avatar": ""
     },
     "sinaide": {
+        "id": 5,
         "password_hash": generate_password_hash("sinaide"),
         "role": "user",
         "email": "sinaide@example.com",
@@ -207,6 +249,7 @@ USERS = {
         "avatar": ""
     },
     "weierting": {
+        "id": 6,
         "password_hash": generate_password_hash("weierting"),
         "role": "user",
         "email": "weierting@example.com",
@@ -215,6 +258,7 @@ USERS = {
         "avatar": ""
     },
     "yuyuan": {
+        "id": 7,
         "password_hash": generate_password_hash("yuyuan"),
         "role": "user",
         "email": "yuyuan@example.com",
@@ -303,6 +347,11 @@ def init_db():
         c.execute("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT ''")
     except sqlite3.OperationalError:
         pass  # 列已存在
+    # 兼容旧表：如果 balance 列不存在则添加
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN balance REAL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # 列已存在
     # 插入默认用户（使用哈希存储密码）
     default_users = [
         ("admin", "admin123", "admin@example.com", "13800138000"),
@@ -327,6 +376,19 @@ def init_db():
         u, a = row
         if u in USERS:
             USERS[u]["avatar"] = a
+
+    # 从数据库加载余额信息到 USERS 字典（重启后恢复）
+    c.execute("SELECT username, balance FROM users WHERE balance IS NOT NULL")
+    for row in c.fetchall():
+        u, b = row
+        if u in USERS:
+            USERS[u]["balance"] = b
+
+    # 将 USERS 字典中的余额同步回数据库（确保 DB 与代码定义一致）
+    for username, info in USERS.items():
+        c.execute("UPDATE users SET balance = ? WHERE username = ? AND (balance IS NULL OR balance != ?)",
+                  (info["balance"], username, info["balance"]))
+    conn.commit()
 
     conn.close()
 
@@ -445,7 +507,9 @@ def register():
             return render_template("register.html", error="注册失败，请稍后重试！")
 
         # 同步添加到 USERS 字典
+        max_id = max(u.get("id", 0) for u in USERS.values())
         USERS[username] = {
+            "id": max_id + 1,
             "password_hash": password_hash,
             "role": "user",
             "email": email,
@@ -502,8 +566,8 @@ def change_password():
             c.execute("UPDATE users SET password_hash = ? WHERE username = ?", (password_hash, username))
             conn.commit()
             conn.close()
-        except Exception:
-            pass  # SQLite 更新失败不阻塞功能
+        except Exception as e:
+            print(f"[change_password] SQLite 同步失败: {e}")
 
         user_info = safe_user_info(username)
         return render_template("index.html", username=username, user=user_info,
@@ -583,13 +647,87 @@ def upload():
             c.execute("UPDATE users SET avatar = ? WHERE username = ?", (filename, username))
             conn.commit()
             conn.close()
-        except Exception:
-            pass  # SQLite 更新失败不阻塞功能
+        except Exception as e:
+            print(f"[upload] SQLite 同步头像失败: {e}")
 
         file_url = f"/uploads/{filename}"
         return render_template("upload.html", success="文件上传成功！", file_url=file_url)
 
     return render_template("upload.html")
+
+
+@app.route("/profile")
+def profile():
+    """个人中心路由（需登录，普通用户只能查看自己的资料）"""
+    # 检查登录态（VULN-001 修复）
+    current_username = session.get("username")
+    if not current_username:
+        return redirect("/login")
+
+    user_id = request.args.get("user_id", type=int)
+    if user_id is None:
+        return redirect("/")
+
+    # 根据 user_id 查找用户
+    target_user = None
+    target_username = None
+    for username, info in USERS.items():
+        if info.get("id") == user_id:
+            target_user = safe_user_info(username)
+            target_username = username
+            break
+
+    if target_user is None:
+        return render_template("profile.html", error="用户不存在", user=None)
+
+    # 权限校验：普通用户只能查看自己的资料（VULN-005 修复）
+    current_user_id = USERS[current_username].get("id")
+    user_role = USERS[current_username].get("role")
+    if user_role != "admin" and current_user_id != user_id:
+        return render_template("profile.html", error="无权限查看其他用户资料", user=None)
+
+    return render_template("profile.html", user=target_user, error=None)
+
+
+@app.route("/recharge", methods=["POST"])
+def recharge():
+    """充值路由（需登录，仅限本人充值，必须为正数）"""
+    # CSRF 校验（VULN-004 修复）
+    if not validate_csrf_token():
+        current_username = session.get("username")
+        if current_username and current_username in USERS:
+            return render_template("profile.html", error="表单已过期，请重新提交！",
+                                   user=safe_user_info(current_username))
+        return redirect("/")
+
+    # 检查登录态（VULN-002 修复）
+    current_username = session.get("username")
+    if not current_username:
+        return redirect("/login")
+
+    amount = request.form.get("amount", type=float, default=0)
+
+    # 充值金额必须为正数（VULN-003 修复）
+    if amount <= 0:
+        return render_template("profile.html", error="充值金额必须大于零",
+                               user=safe_user_info(current_username))
+
+    # 只允许给当前登录用户充值（VULN-002 修复）
+    USERS[current_username]["balance"] += amount
+
+    # 同步更新 SQLite 数据库
+    try:
+        conn = sqlite3.connect("data/users.db")
+        c = conn.cursor()
+        c.execute("UPDATE users SET balance = ? WHERE username = ?",
+                  (USERS[current_username]["balance"], current_username))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[recharge] SQLite 同步失败: {e}")
+
+    current_user_id = USERS[current_username].get("id")
+    return redirect(f"/profile?user_id={current_user_id}")
 
 
 @app.after_request
