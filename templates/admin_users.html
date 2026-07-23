@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}用户管理 - 用户管理系统{% endblock %}
+
+{% block content %}
+<div class="card card-wide">
+    <h2 class="card-title">用户管理</h2>
+
+    <!-- 搜索表单 -->
+    <form action="/admin/users" method="GET" class="search-form" style="margin-bottom: 24px;">
+        <div class="search-group" style="display: flex; gap: 10px;">
+            <input type="text" name="keyword" value="{{ keyword }}" placeholder="输入用户名搜索..." class="form-input" style="flex: 1;">
+            <button type="submit" class="btn btn-primary">搜索</button>
+            {% if keyword %}
+                <a href="/admin/users" class="btn btn-info">清除</a>
+            {% endif %}
+        </div>
+    </form>
+
+    {% if users %}
+        <div class="user-count" style="margin-bottom: 16px; color: #666; font-size: 14px;">
+            共找到 {{ users|length }} 个用户
+        </div>
+        <div class="user-table-wrapper">
+            <table class="user-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>用户名</th>
+                        <th>邮箱</th>
+                        <th>手机</th>
+                        <th>角色</th>
+                        <th>余额</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for u in users %}
+                    <tr>
+                        <td>{{ u.id }}</td>
+                        <td>{{ u.username }}</td>
+                        <td title="{{ u.email }}">{{ u.email }}</td>
+                        <td>{{ u.phone }}</td>
+                        <td>
+                            {% if u.role == 'admin' %}
+                                <span class="role-badge role-admin">管理员</span>
+                            {% else %}
+                                <span class="role-badge role-user">普通用户</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ u.balance }}</td>
+                        <td>
+                            <a href="/profile?user_id={{ u.id }}&redirect=/admin/users" class="btn btn-primary" style="padding: 4px 12px; font-size: 12px;">查看</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% elif keyword %}
+        <div class="error-message" style="text-align: center; padding: 40px 0;">
+            未找到与"{{ keyword }}"匹配的用户
+        </div>
+    {% else %}
+        <div class="no-data" style="text-align: center; padding: 40px 0; color: #999;">
+            暂无用户数据
+        </div>
+    {% endif %}
+
+    <div class="action-bar" style="margin-top: 20px;">
+        <a href="/" class="btn btn-primary">返回首页</a>
+    </div>
+</div>
+{% endblock %}

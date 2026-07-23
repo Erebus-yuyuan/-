@@ -8,6 +8,50 @@ import secrets
 from functools import wraps
 from urllib.parse import unquote
 from flask import Flask, render_template, request, redirect, session, send_from_directory, abort
+import bleach
+
+
+ALLOWED_HTML_TAGS = [
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'p', 'br', 'hr',
+    'div', 'span',
+    'ul', 'ol', 'li',
+    'table', 'thead', 'tbody', 'tr', 'th', 'td',
+    'strong', 'b', 'em', 'i', 'u', 's',
+    'a', 'img',
+    'pre', 'code', 'tt',
+    'blockquote',
+    'section', 'header', 'footer',
+    'dl', 'dt', 'dd',
+    'abbr', 'cite',
+]
+
+
+ALLOWED_HTML_ATTRS = {
+    'a': ['href', 'title', 'target', 'rel'],
+    'img': ['src', 'alt', 'title', 'width', 'height'],
+    'abbr': ['title'],
+    '*': ['id', 'class'],
+}
+
+
+ALLOWED_HTML_PROTOCOLS = ['http', 'https', 'mailto']
+
+
+def sanitize_html(content):
+    """安全过滤HTML内容，仅保留安全的标签、属性和协议"""
+    if not content:
+        return ""
+    return bleach.clean(
+        content,
+        tags=ALLOWED_HTML_TAGS,
+        attributes=ALLOWED_HTML_ATTRS,
+        protocols=ALLOWED_HTML_PROTOCOLS,
+        strip=True,
+        strip_comments=True
+    )
+
+
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.exceptions import RequestEntityTooLarge
 
@@ -27,6 +71,8 @@ app.config.update(
     SESSION_COOKIE_SECURE=False,  # 开发环境无 HTTPS，保持 False
     MAX_CONTENT_LENGTH=16 * 1024 * 1024,  # 最大上传文件 16MB
 )
+
+app.jinja_env.filters['sanitize'] = sanitize_html
 
 # ===== 上传文件存储目录（存放于 static 之外，防止直接静态访问） =====
 UPLOAD_DIR = os.path.join(app.root_path, "uploads")
@@ -192,12 +238,14 @@ def require_role(required_role):
 
 @app.context_processor
 def inject_user_id():
-    """向所有模板注入当前登录用户的 user_id"""
+    """向所有模板注入当前登录用户的 user_id 和 role"""
     username = session.get("username")
     user_id = None
+    user_role = None
     if username and username in USERS:
         user_id = USERS[username].get("id")
-    return dict(current_user_id=user_id)
+        user_role = USERS[username].get("role")
+    return dict(current_user_id=user_id, current_user_role=user_role)
 
 # ===== 安全加固 2：密码哈希存储 =====
 # 密码不再明文存储，使用 bcrypt 算法哈希
@@ -418,6 +466,58 @@ def index():
         sync_session_avatar(username)
         user_info = safe_user_info(username)
     return render_template("index.html", username=username, user=user_info)
+
+
+@app.route("/page")
+def dynamic_page():
+    """动态页面加载路由 - 从 pages/ 目录读取文件并显示在首页上"""
+    name = request.args.get("name", "")
+    page_content = None
+
+    # 【安全修复】URL解码后移除路径遍历序列
+    name = unquote(name)
+    # 递归移除所有路径遍历序列，防止双写绕过
+    while ".." in name or "./" in name or "\\" in name or name.startswith("/"):
+        name = name.replace("..", "").replace("./", "").replace("\\", "")
+        name = name.lstrip("/")
+
+    if not name:
+        page_content = "页面不存在"
+        username = session.get("username")
+        user_info = None
+        if username and username in USERS:
+            sync_session_avatar(username)
+            user_info = safe_user_info(username)
+        return render_template("index.html", username=username, user=user_info, page_content=page_content)
+
+    # 【安全修复】获取 pages 目录的绝对路径
+    pages_dir = os.path.join(app.root_path, "pages")
+
+    # 尝试直接读取文件
+    file_path = os.path.join(pages_dir, name)
+    real_path = os.path.realpath(file_path)
+    real_pages_dir = os.path.realpath(pages_dir)
+
+    # 【安全修复】检查文件是否在 pages/ 目录内
+    if real_path.startswith(real_pages_dir + os.sep) and os.path.isfile(real_path):
+        with open(real_path, "r", encoding="utf-8") as f:
+            page_content = f.read()
+    else:
+        # 尝试加上 .html 后缀
+        file_path_html = file_path + ".html"
+        real_path_html = os.path.realpath(file_path_html)
+        if real_path_html.startswith(real_pages_dir + os.sep) and os.path.isfile(real_path_html):
+            with open(real_path_html, "r", encoding="utf-8") as f:
+                page_content = f.read()
+        else:
+            page_content = "页面不存在"
+
+    username = session.get("username")
+    user_info = None
+    if username and username in USERS:
+        sync_session_avatar(username)
+        user_info = safe_user_info(username)
+    return render_template("index.html", username=username, user=user_info, page_content=page_content)
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -686,7 +786,28 @@ def profile():
     if user_role != "admin" and current_user_id != user_id:
         return render_template("profile.html", error="无权限查看其他用户资料", user=None)
 
-    return render_template("profile.html", user=target_user, error=None)
+    redirect_url = request.args.get("redirect", "")
+    return render_template("profile.html", user=target_user, error=None, redirect_url=redirect_url)
+
+
+@app.route("/admin/users")
+@require_role("admin")
+def admin_users():
+    """管理员用户管理 - 搜索并查看所有用户"""
+    keyword = request.args.get("keyword", "").strip()
+
+    user_list = []
+    for username, info in USERS.items():
+        # 如果有关键字，按用户名模糊搜索（大小写不敏感）
+        if keyword and keyword.lower() not in username.lower():
+            continue
+        user_info = safe_user_info(username)
+        user_list.append(user_info)
+
+    # 按用户 ID 排序
+    user_list.sort(key=lambda u: u.get("id", 0))
+
+    return render_template("admin_users.html", users=user_list, keyword=keyword)
 
 
 @app.route("/recharge", methods=["POST"])

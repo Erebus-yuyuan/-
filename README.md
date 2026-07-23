@@ -1,6 +1,6 @@
 # Flask 用户信息管理系统（安全靶场）
 
-> 版本：越权业务逻辑漏洞
+> 版本：文件包含漏洞修复
 
 一个基于 Flask 的 Web 安全靶场项目，包含完整的用户管理功能，用于 Web 安全教学与漏洞复现。
 
@@ -44,6 +44,17 @@ cd /opt/Class01/ && python3 app.py
   - 导航栏右上角圆形头像
   - 首页用户信息区大头像
   - 重启后头像持久化（SQLite）
+- **动态页面加载**
+  - /page 路由，从 pages/ 目录加载页面内容
+  - 支持 .html 后缀自动补全
+  - 帮助中心页面（/page?name=help）
+- **管理员用户管理**
+  - /admin/users 页面，仅 admin 角色可访问
+  - 按用户名模糊搜索
+  - 列表展示所有用户信息
+  - 权限校验：普通用户不可见
+- **面包屑导航**
+  - 用户管理 -> 查看详情 -> 返回上一页（而非直接回首页）
 - CSRF Token 保护（所有 POST 表单）
 - 密码哈希存储（bcrypt）
 - 随机 Secret Key（256位）
@@ -53,7 +64,8 @@ cd /opt/Class01/ && python3 app.py
 
 - **RBAC 装饰器**: `require_login` / `require_role("admin")`
 - 普通用户只能查看和操作自己的资料
-- 管理员可以查看所有用户资料
+- 管理员可以查看所有用户资料、访问用户管理页面
+- 管理员可在导航栏和首页看到"用户管理"入口
 - 所有资金操作绑定当前会话用户
 
 ## 报告文档
@@ -61,12 +73,15 @@ cd /opt/Class01/ && python3 app.py
 - [Day3 安全漏洞修复报告](day3漏洞报告.md)
 - [Day4 文件上传漏洞修复报告](day4-文件上传漏洞修复报告.md)
 - [Day5 越权业务逻辑漏洞修复报告](day5-越权业务逻辑漏洞修复报告.docx)
+- [Day6 文件包含漏洞修复报告](day6-文件包含漏洞修复报告.docx)
 
 ## 项目结构
 
 ```
 /opt/Class01/
 ├── app.py                  # Flask 主程序
+├── pages/                  # 动态页面目录
+│   └── help.html           # 帮助中心页面
 ├── templates/              # HTML 模板
 │   ├── base.html           # 基础布局（导航栏含头像）
 │   ├── login.html          # 登录页
@@ -75,15 +90,17 @@ cd /opt/Class01/ && python3 app.py
 │   ├── upload.html         # 头像上传页
 │   ├── profile.html        # 个人中心（含充值功能）
 │   ├── change_password.html# 修改密码
+│   ├── admin_users.html    # 管理员用户管理页
 │   └── error.html          # 错误提示页
 ├── static/
 │   └── css/style.css       # 样式文件（含头像样式）
 ├── uploads/                # 用户上传文件目录（static外）
 ├── data/
 │   └── users.db            # SQLite 用户数据库
-├── day5-越权业务逻辑漏洞修复报告.docx
-├── day4-文件上传漏洞修复报告.md
 ├── day3漏洞报告.md
+├── day4-文件上传漏洞修复报告.md
+├── day5-越权业务逻辑漏洞修复报告.docx
+├── day6-文件包含漏洞修复报告.docx
 ├── hunter_search.py        # 鹰图搜索脚本
 └── generate_report.py      # 报告生成工具
 ```
@@ -94,4 +111,12 @@ cd /opt/Class01/ && python3 app.py
 - **数据库**: SQLite（参数化查询）
 - **前端**: Jinja2 模板 + CSS
 - **密码加密**: bcrypt（werkzeug.security）
+- **HTML净化**: bleach（XSS防护）
 - **源码管理**: Git + GitHub（`git@github.com:Erebus-yuyuan/-.git`）
+
+## 安全修复历史
+
+### Day6 - 文件包含漏洞修复
+- **LFI-001 任意文件读取**：递归移除路径遍历序列 + os.path.realpath 规范化 + pages/ 目录白名单检查
+- **XSS-001 内容未经转义渲染**：以 bleach HTML 净化器替换 | safe 过滤器，仅保留安全标签与属性
+- **INF-001 数据库文件泄露**：LFI 防护间接保护数据库文件

@@ -39,7 +39,7 @@
         {% endif %}
 
         <div class="action-bar" style="margin-top: 20px;">
-            <a href="/" class="btn btn-primary">返回首页</a>
+            <a href="{{ redirect_url or '/' }}" class="btn btn-primary">{% if redirect_url %}返回上一页{% else %}返回首页{% endif %}</a>
         </div>
     {% else %}
         <h2 class="card-title">个人中心</h2>
@@ -47,7 +47,7 @@
             <div class="error-message">{{ error }}</div>
         {% endif %}
         <div class="action-bar">
-            <a href="/" class="btn btn-primary">返回首页</a>
+            <a href="{{ redirect_url or '/' }}" class="btn btn-primary">{% if redirect_url %}返回上一页{% else %}返回首页{% endif %}</a>
         </div>
     {% endif %}
 </div>

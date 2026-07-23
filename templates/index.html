@@ -4,7 +4,14 @@
 
 {% block content %}
 <div class="card">
-    {% if username and user %}
+    {% if page_content %}
+        <div class="page-content">
+            {{ page_content | sanitize }}
+        </div>
+        <div class="action-bar" style="margin-top: 20px;">
+            <a href="/" class="btn btn-primary">返回首页</a>
+        </div>
+    {% elif username and user %}
         <h2 class="card-title">欢迎回来，{{ username }}！</h2>
         {% if success %}
             <div class="success-message">{{ success }}</div>
@@ -26,16 +33,23 @@
             </ul>
         </div>
 
-        <div class="action-bar">
+        <div class="action-bar action-bar-row1">
+            {% if current_user_role == 'admin' %}
+            <a href="/admin/users" class="btn btn-primary">用户管理</a>
+            {% endif %}
             <a href="/profile?user_id={{ current_user_id }}" class="btn btn-primary">个人中心</a>
             <a href="/upload" class="btn btn-primary">上传头像</a>
             <a href="/change-password" class="btn btn-primary">修改密码</a>
+        </div>
+        <div class="action-bar action-bar-row2">
+            <a href="/page?name=help" class="btn btn-info">帮助中心</a>
             <a href="/logout" class="btn btn-danger">退出登录</a>
         </div>
     {% else %}
         <h2 class="card-title">欢迎来到用户管理系统</h2>
         <p class="welcome-text">请先登录以查看您的信息。</p>
         <div class="action-bar">
+            <a href="/page?name=help" class="btn btn-info">帮助中心</a>
             <a href="/login" class="btn btn-primary">前往登录</a>
         </div>
     {% endif %}
