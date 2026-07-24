@@ -19,7 +19,6 @@
                 <span class="nav-welcome">欢迎，{{ session['username'] }}</span>
                 <a href="/profile?user_id={{ current_user_id }}" class="nav-link">个人中心</a>
                 <a href="/upload" class="nav-link">上传头像</a>
-                <a href="/change-password" class="nav-link">修改密码</a>
                 {% if current_user_role == 'admin' %}
                 <a href="/admin/users" class="nav-link">用户管理</a>
                 {% endif %}

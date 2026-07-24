@@ -36,11 +36,55 @@
                 </div>
             </form>
         </div>
+
+        <div class="card" style="margin-top: 20px;">
+            <h3>修改密码</h3>
+            <form action="/change-password" method="POST" class="change-password-form">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                <div class="form-group">
+                    <label for="old_password">原密码：</label>
+                    <input type="password" name="old_password" id="old_password" required class="form-input">
+                </div>
+                <div class="form-group">
+                    <label for="new_password">新密码：</label>
+                    <input type="password" name="new_password" id="new_password" minlength="8" required class="form-input">
+                    <small class="form-hint">密码长度至少8位，须包含大写字母、小写字母、数字、特殊字符中至少三类</small>
+                </div>
+                <div class="form-group">
+                    <label for="confirm_password">确认密码：</label>
+                    <input type="password" name="confirm_password" id="confirm_password" minlength="8" required class="form-input">
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">修改密码</button>
+                </div>
+            </form>
+        </div>
         {% endif %}
 
         <div class="action-bar" style="margin-top: 20px;">
             <a href="{{ redirect_url or '/' }}" class="btn btn-primary">{% if redirect_url %}返回上一页{% else %}返回首页{% endif %}</a>
         </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var form = document.querySelector('.change-password-form');
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            var oldPwd = document.getElementById('old_password').value;
+            var newPwd = document.getElementById('new_password').value;
+            var confirmPwd = document.getElementById('confirm_password').value;
+            if (newPwd !== confirmPwd) {
+                e.preventDefault();
+                alert('两次输入的新密码不一致！');
+            } else if (newPwd === oldPwd) {
+                e.preventDefault();
+                alert('新密码不能与原密码相同！');
+            }
+        });
+    }
+});
+</script>
+
     {% else %}
         <h2 class="card-title">个人中心</h2>
         {% if error %}

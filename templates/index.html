@@ -6,7 +6,7 @@
 <div class="card">
     {% if page_content %}
         <div class="page-content">
-            {{ page_content | sanitize }}
+            {{ page_content | sanitize | safe }}
         </div>
         <div class="action-bar" style="margin-top: 20px;">
             <a href="/" class="btn btn-primary">返回首页</a>
@@ -39,7 +39,6 @@
             {% endif %}
             <a href="/profile?user_id={{ current_user_id }}" class="btn btn-primary">个人中心</a>
             <a href="/upload" class="btn btn-primary">上传头像</a>
-            <a href="/change-password" class="btn btn-primary">修改密码</a>
         </div>
         <div class="action-bar action-bar-row2">
             <a href="/page?name=help" class="btn btn-info">帮助中心</a>

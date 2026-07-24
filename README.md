@@ -1,6 +1,6 @@
 # Flask 用户信息管理系统（安全靶场）
 
-> 版本：文件包含漏洞修复
+> 版本：CSRF漏洞修复
 
 一个基于 Flask 的 Web 安全靶场项目，包含完整的用户管理功能，用于 Web 安全教学与漏洞复现。
 
@@ -44,6 +44,7 @@ cd /opt/Class01/ && python3 app.py
   - 导航栏右上角圆形头像
   - 首页用户信息区大头像
   - 重启后头像持久化（SQLite）
+- **修改密码**（CSRF Token 防护 + 原密码校验 + 密码复杂度校验 + 频率限制）
 - **动态页面加载**
   - /page 路由，从 pages/ 目录加载页面内容
   - 支持 .html 后缀自动补全
@@ -74,6 +75,7 @@ cd /opt/Class01/ && python3 app.py
 - [Day4 文件上传漏洞修复报告](day4-文件上传漏洞修复报告.md)
 - [Day5 越权业务逻辑漏洞修复报告](day5-越权业务逻辑漏洞修复报告.docx)
 - [Day6 文件包含漏洞修复报告](day6-文件包含漏洞修复报告.docx)
+- [Day7 CSRF漏洞修复报告](day7-CSRF漏洞修复报告.docx)
 
 ## 项目结构
 
@@ -88,8 +90,8 @@ cd /opt/Class01/ && python3 app.py
 │   ├── register.html       # 注册页
 │   ├── index.html          # 首页（用户信息+头像）
 │   ├── upload.html         # 头像上传页
-│   ├── profile.html        # 个人中心（含充值功能）
-│   ├── change_password.html# 修改密码
+│   ├── profile.html        # 个人中心（含充值、修改密码功能）
+│   ├── change_password.html# 修改密码（旧版，不再使用）
 │   ├── admin_users.html    # 管理员用户管理页
 │   └── error.html          # 错误提示页
 ├── static/
@@ -120,3 +122,11 @@ cd /opt/Class01/ && python3 app.py
 - **LFI-001 任意文件读取**：递归移除路径遍历序列 + os.path.realpath 规范化 + pages/ 目录白名单检查
 - **XSS-001 内容未经转义渲染**：以 bleach HTML 净化器替换 | safe 过滤器，仅保留安全标签与属性
 - **INF-001 数据库文件泄露**：LFI 防护间接保护数据库文件
+
+### Day7 - CSRF漏洞修复
+- **CSRF-001 /change-password 无 CSRF 防护**：添加 validate_csrf_token() 校验及表单 hidden 字段
+- **IDOR-001 越权修改他人密码**：从 session 获取用户名，移除表单 username 字段
+- **AUTH-001 无需原密码即可修改**：增加原密码 check_password_hash 校验
+- **SESSION-001 修改密码后会话未失效**：成功后 session.clear() 强制重新登录
+- **RATE-001 密码修改无频率限制**：复用 LOGIN_LIMIT 机制限制尝试次数
+- **PWEAK-001 弱密码策略**：长度 8 位 + 大小写字母/数字/特殊字符至少三类

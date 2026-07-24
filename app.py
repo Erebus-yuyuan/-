@@ -625,55 +625,102 @@ def register():
 
 @app.route("/change-password", methods=["GET", "POST"])
 def change_password():
-    """修改密码（需登录）"""
+    """修改密码（需登录）
+    修复：仅允许修改当前登录用户密码，需验证原密码，含频率限制和密码复杂度校验。"""
     username = session.get("username")
     if not username:
         return redirect("/login")
 
-    if request.method == "POST":
-        # CSRF 校验
-        if not validate_csrf_token():
-            return render_template("change_password.html", error="表单已过期，请重新提交！")
+    # GET 请求时直接重定向到个人中心
+    if request.method == "GET":
+        current_user_id = USERS.get(username, {}).get("id")
+        return redirect(f"/profile?user_id={current_user_id}")
 
-        old_password = request.form.get("old_password", "")
-        new_password = request.form.get("new_password", "")
-        confirm_password = request.form.get("confirm_password", "")
+    # CSRF Token 校验（修复 CSRF 漏洞）
+    if not validate_csrf_token():
+        current_user_id = USERS.get(username, {}).get("id")
+        return redirect(f"/profile?user_id={current_user_id}")
 
-        user = USERS.get(username)
+    # 频率限制检查（修复无频率限制漏洞）
+    client_ip = request.remote_addr or "unknown"
+    locked, remaining = is_login_locked(client_ip, username + "_pwd")
+    if locked:
+        current_user_id = USERS.get(username, {}).get("id")
+        return redirect(f"/profile?user_id={current_user_id}")
 
-        # 校验旧密码
-        if not check_password_hash(user["password_hash"], old_password):
-            return render_template("change_password.html", error="原密码错误！")
+    # 从 session 获取当前用户名，不从表单接收（修复越权漏洞）
+    target_username = username
+    new_password = request.form.get("new_password", "")
+    old_password = request.form.get("old_password", "")
+    confirm_password = request.form.get("confirm_password", "")
 
-        # 校验新密码
-        if not new_password:
-            return render_template("change_password.html", error="请输入新密码！")
-        if len(new_password) < 6:
-            return render_template("change_password.html", error="新密码长度不能少于6位！")
-        if new_password == old_password:
-            return render_template("change_password.html", error="新密码不能与原密码相同！")
-        if new_password != confirm_password:
-            return render_template("change_password.html", error="两次输入的密码不一致！")
+    user = USERS.get(target_username)
 
-        # 更新密码（同时更新 SQLite 和 USERS 字典）
-        password_hash = generate_password_hash(new_password)
-        USERS[username]["password_hash"] = password_hash
+    # 校验原密码（修复无需原密码漏洞）
+    if not check_password_hash(user["password_hash"], old_password):
+        record_login_attempt(client_ip, username + "_pwd", success=False)
+        current_user_id = USERS.get(username, {}).get("id")
+        return redirect(f"/profile?user_id={current_user_id}")
 
-        # 同步更新 SQLite 数据库
-        try:
-            conn = sqlite3.connect("data/users.db")
-            c = conn.cursor()
-            c.execute("UPDATE users SET password_hash = ? WHERE username = ?", (password_hash, username))
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            print(f"[change_password] SQLite 同步失败: {e}")
+    # 校验新密码
+    if not new_password:
+        record_login_attempt(client_ip, username + "_pwd", success=False)
+        current_user_id = USERS.get(username, {}).get("id")
+        return redirect(f"/profile?user_id={current_user_id}")
 
-        user_info = safe_user_info(username)
-        return render_template("index.html", username=username, user=user_info,
-                               success="密码修改成功！")
+    # 修复弱密码策略漏洞：长度提升至8位，要求包含大小写字母、数字、特殊字符中至少三类
+    if len(new_password) < 8:
+        record_login_attempt(client_ip, username + "_pwd", success=False)
+        current_user_id = USERS.get(username, {}).get("id")
+        return redirect(f"/profile?user_id={current_user_id}")
 
-    return render_template("change_password.html")
+    strength = 0
+    if re.search(r'[a-z]', new_password):
+        strength += 1
+    if re.search(r'[A-Z]', new_password):
+        strength += 1
+    if re.search(r'[0-9]', new_password):
+        strength += 1
+    if re.search(r'[^a-zA-Z0-9]', new_password):
+        strength += 1
+
+    if strength < 3:
+        record_login_attempt(client_ip, username + "_pwd", success=False)
+        current_user_id = USERS.get(username, {}).get("id")
+        return redirect(f"/profile?user_id={current_user_id}")
+
+    # 修复新密码与旧密码相同漏洞
+    if new_password == old_password:
+        record_login_attempt(client_ip, username + "_pwd", success=False)
+        current_user_id = USERS.get(username, {}).get("id")
+        return redirect(f"/profile?user_id={current_user_id}")
+
+    # 修复确认密码服务端未验证漏洞
+    if new_password != confirm_password:
+        record_login_attempt(client_ip, username + "_pwd", success=False)
+        current_user_id = USERS.get(username, {}).get("id")
+        return redirect(f"/profile?user_id={current_user_id}")
+
+    # 记录成功尝试
+    record_login_attempt(client_ip, username + "_pwd", success=True)
+
+    # 更新密码（同时更新 SQLite 和 USERS 字典）
+    password_hash = generate_password_hash(new_password)
+    USERS[target_username]["password_hash"] = password_hash
+
+    # 同步更新 SQLite 数据库
+    try:
+        conn = sqlite3.connect("data/users.db")
+        c = conn.cursor()
+        c.execute("UPDATE users SET password_hash = ? WHERE username = ?", (password_hash, target_username))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[change_password] SQLite 同步失败: {e}")
+
+    # 修复会话未失效漏洞：清空会话强制重新登录
+    session.clear()
+    return redirect("/login")
 
 
 @app.route("/upload", methods=["GET", "POST"])
