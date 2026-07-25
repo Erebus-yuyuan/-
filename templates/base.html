@@ -11,6 +11,8 @@
     <nav class="navbar">
         <div class="nav-brand">用户管理系统</div>
         <div class="nav-menu">
+            <a href="/welcome" class="nav-link">欢迎页</a>
+            <a href="/feedback" class="nav-link">反馈</a>
             {% if session.get('username') %}
                 {% set avatar_url = session.get('avatar_url') %}
                 {% if avatar_url %}
