@@ -1,6 +1,6 @@
 # Flask 用户信息管理系统（安全靶场）
 
-> 版本：CSRF漏洞修复
+> 版本：SSTI漏洞修复
 
 一个基于 Flask 的 Web 安全靶场项目，包含完整的用户管理功能，用于 Web 安全教学与漏洞复现。
 
@@ -54,6 +54,12 @@ cd /opt/Class01/ && python3 app.py
   - 按用户名模糊搜索
   - 列表展示所有用户信息
   - 权限校验：普通用户不可见
+- **欢迎页**（/welcome）
+  - GET 方式，支持 URL 参数 name 定制欢迎语
+  - 不传参数时默认显示"亲爱的用户"
+- **用户反馈**（/feedback）
+  - GET 显示反馈表单（姓名 + 留言内容）
+  - POST 提交后展示反馈结果
 - **面包屑导航**
   - 用户管理 -> 查看详情 -> 返回上一页（而非直接回首页）
 - CSRF Token 保护（所有 POST 表单）
@@ -76,6 +82,7 @@ cd /opt/Class01/ && python3 app.py
 - [Day5 越权业务逻辑漏洞修复报告](day5-越权业务逻辑漏洞修复报告.docx)
 - [Day6 文件包含漏洞修复报告](day6-文件包含漏洞修复报告.docx)
 - [Day7 CSRF漏洞修复报告](day7-CSRF漏洞修复报告.docx)
+- [Day8 SSTI漏洞修复报告](day8-ssti漏洞修复报告.docx)
 
 ## 项目结构
 
@@ -104,7 +111,9 @@ cd /opt/Class01/ && python3 app.py
 ├── day5-越权业务逻辑漏洞修复报告.docx
 ├── day6-文件包含漏洞修复报告.docx
 ├── hunter_search.py        # 鹰图搜索脚本
-└── generate_report.py      # 报告生成工具
+├── generate_report.py      # 报告生成工具
+├── day7-CSRF漏洞修复报告.docx
+└── day8-ssti漏洞修复报告.docx
 ```
 
 ## 技术栈
@@ -130,3 +139,9 @@ cd /opt/Class01/ && python3 app.py
 - **SESSION-001 修改密码后会话未失效**：成功后 session.clear() 强制重新登录
 - **RATE-001 密码修改无频率限制**：复用 LOGIN_LIMIT 机制限制尝试次数
 - **PWEAK-001 弱密码策略**：长度 8 位 + 大小写字母/数字/特殊字符至少三类
+
+### Day8 - SSTI漏洞修复
+- **SSTI-001 /welcome 路由注入漏洞**：将 render_template_string(f"...{name}...") 改为 render_template_string("...{{ name }}...", name=name)，阻止通过 URL 参数注入 Jinja2 模板代码
+- **SSTI-002 /feedback POST 路由注入漏洞**：同时修复 name 和 message 两个注入点，将 f-string 拼接改为模板变量传递
+- **新增 /welcome 欢迎页**：支持 URL 参数 name 自定义欢迎语
+- **新增 /feedback 反馈页**：支持 GET 表单展示和 POST 结果展示
