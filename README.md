@@ -82,13 +82,13 @@ cd /opt/Class01/ && python3 app.py
 
 ## 报告文档
 
-- [Day3 安全漏洞修复报告](day3漏洞报告.md)
-- [Day4 文件上传漏洞修复报告](day4-文件上传漏洞修复报告.md)
-- [Day5 越权业务逻辑漏洞修复报告](day5-越权业务逻辑漏洞修复报告.docx)
-- [Day6 文件包含漏洞修复报告](day6-文件包含漏洞修复报告.docx)
-- [Day7 CSRF漏洞修复报告](day7-CSRF漏洞修复报告.docx)
-- [Day8 SSTI漏洞修复报告](day8-ssti漏洞修复报告.docx)
-- [Day9 命令执行漏洞修复报告](day9-命令执行漏洞修复报告.docx)
+- [Day3 安全漏洞修复报告](reports/day3漏洞报告.md)
+- [Day4 文件上传漏洞修复报告](reports/day4-文件上传漏洞修复报告.md)
+- [Day5 越权业务逻辑漏洞修复报告](reports/day5-越权业务逻辑漏洞修复报告.docx)
+- [Day6 文件包含漏洞修复报告](reports/day6-文件包含漏洞修复报告.docx)
+- [Day7 CSRF漏洞修复报告](reports/day7-CSRF漏洞修复报告.docx)
+- [Day8 SSTI漏洞修复报告](reports/day8-ssti漏洞修复报告.docx)
+- [Day9 命令执行漏洞修复报告](reports/day9-命令执行漏洞修复报告.docx)
 
 ## 项目结构
 
@@ -97,6 +97,14 @@ cd /opt/Class01/ && python3 app.py
 ├── app.py                  # Flask 主程序
 ├── pages/                  # 动态页面目录
 │   └── help.html           # 帮助中心页面
+├── reports/                # 安全修复报告
+│   ├── day3漏洞报告.md
+│   ├── day4-文件上传漏洞修复报告.md
+│   ├── day5-越权业务逻辑漏洞修复报告.docx
+│   ├── day6-文件包含漏洞修复报告.docx
+│   ├── day7-CSRF漏洞修复报告.docx
+│   ├── day8-ssti漏洞修复报告.docx
+│   └── day9-命令执行漏洞修复报告.docx
 ├── templates/              # HTML 模板
 │   ├── base.html           # 基础布局（导航栏含头像）
 │   ├── login.html          # 登录页
@@ -113,10 +121,6 @@ cd /opt/Class01/ && python3 app.py
 ├── uploads/                # 用户上传文件目录（static外）
 ├── data/
 │   └── users.db            # SQLite 用户数据库
-├── day3漏洞报告.md
-├── day4-文件上传漏洞修复报告.md
-├── day5-越权业务逻辑漏洞修复报告.docx
-├── day6-文件包含漏洞修复报告.docx
 ├── hunter_search.py        # 鹰图搜索脚本
 ├── generate_report.py      # 报告生成工具
 ├── day7-CSRF漏洞修复报告.docx
