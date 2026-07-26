@@ -8,6 +8,7 @@ import secrets
 from functools import wraps
 from urllib.parse import unquote
 from flask import Flask, render_template, render_template_string, request, redirect, session, send_from_directory, abort
+import subprocess, platform
 import bleach
 
 
@@ -1094,6 +1095,59 @@ def serve_upload(filename):
 def request_entity_too_large(error):
     """【安全修复】处理上传文件过大错误（RequestEntityTooLarge）"""
     return render_template("upload.html", error="文件过大！上传文件大小不能超过 16MB。"), 413
+
+
+@app.route("/ping", methods=["GET", "POST"])
+def ping():
+    """Ping 网络诊断功能，需要登录才能访问"""
+    username = session.get("username")
+    if not username:
+        return redirect("/login")
+
+    result = ""
+    if request.method == "POST":
+        ip = request.form.get("ip", "").strip()
+
+        # 【安全加固】白名单校验：仅允许合法 IP 地址或域名
+        ip_pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
+        domain_pattern = r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$'
+
+        if not ip:
+            result = "错误：请输入 IP 地址或域名"
+        elif re.match(ip_pattern, ip):
+            parts = ip.split('.')
+            if not all(0 <= int(p) <= 255 for p in parts):
+                result = "错误：IP 地址格式不正确（每段应为 0-255）"
+            else:
+                try:
+                    result = subprocess.check_output(
+                        ["ping", "-c", "3", ip],
+                        timeout=30,
+                        stderr=subprocess.STDOUT
+                    ).decode("utf-8", errors="replace")
+                except subprocess.CalledProcessError as e:
+                    result = e.output.decode("utf-8", errors="replace")
+                except subprocess.TimeoutExpired:
+                    result = "错误：执行超时（30秒）"
+                except Exception as e:
+                    result = f"错误：执行出错：{e}"
+        elif re.match(domain_pattern, ip):
+            try:
+                result = subprocess.check_output(
+                    ["ping", "-c", "3", ip],
+                    timeout=30,
+                    stderr=subprocess.STDOUT
+                ).decode("utf-8", errors="replace")
+            except subprocess.CalledProcessError as e:
+                result = e.output.decode("utf-8", errors="replace")
+            except subprocess.TimeoutExpired:
+                result = "错误：执行超时（30秒）"
+            except Exception as e:
+                result = f"错误：执行出错：{e}"
+        else:
+            result = "错误：无效的 IP 地址或域名格式"
+
+    return render_template("ping.html", result=result)
 
 
 if __name__ == "__main__":

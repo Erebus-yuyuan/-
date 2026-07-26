@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block title %}Ping 测试 - 用户管理系统{% endblock %}
+
+{% block content %}
+<div class="ping-card">
+    <h2 class="ping-card-title">🌐 Ping 网络诊断</h2>
+    <form method="POST" action="/ping" class="ping-form">
+        <div class="ping-form-row">
+            <input type="text" name="ip" class="ping-input" placeholder="输入 IP 地址或域名，如 8.8.8.8" required>
+            <button type="submit" class="ping-btn">Ping</button>
+        </div>
+    </form>
+</div>
+
+<div class="ping-card">
+    <h2 class="ping-card-title">📟 输出结果</h2>
+    <div class="ping-console">{% if result %}{{ result }}{% else %}<span class="ping-placeholder">等待输入……</span>{% endif %}</div>
+</div>
+
+<div class="action-bar" style="margin-top: 12px;">
+    <a href="/" class="btn" style="background: rgba(102, 126, 234, 0.8); color: white;">返回首页</a>
+</div>
+{% endblock %}

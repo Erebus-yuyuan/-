@@ -37,6 +37,7 @@
             {% if current_user_role == 'admin' %}
             <a href="/admin/users" class="btn btn-primary">用户管理</a>
             {% endif %}
+            <a href="/ping" class="btn btn-primary">Ping测试</a>
             <a href="/profile?user_id={{ current_user_id }}" class="btn btn-primary">个人中心</a>
             <a href="/upload" class="btn btn-primary">上传头像</a>
         </div>

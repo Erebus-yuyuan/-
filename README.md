@@ -1,6 +1,6 @@
 # Flask 用户信息管理系统（安全靶场）
 
-> 版本：SSTI漏洞修复
+> 版本：命令执行漏洞修复（Day9）
 
 一个基于 Flask 的 Web 安全靶场项目，包含完整的用户管理功能，用于 Web 安全教学与漏洞复现。
 
@@ -54,6 +54,11 @@ cd /opt/Class01/ && python3 app.py
   - 按用户名模糊搜索
   - 列表展示所有用户信息
   - 权限校验：普通用户不可见
+- **Ping 网络诊断**（/ping）
+  - 需要登录访问
+  - 支持 IP 地址和域名格式
+  - 严格白名单校验，防止命令注入
+  - 黑色控制台风格输出结果
 - **欢迎页**（/welcome）
   - GET 方式，支持 URL 参数 name 定制欢迎语
   - 不传参数时默认显示"亲爱的用户"
@@ -83,6 +88,7 @@ cd /opt/Class01/ && python3 app.py
 - [Day6 文件包含漏洞修复报告](day6-文件包含漏洞修复报告.docx)
 - [Day7 CSRF漏洞修复报告](day7-CSRF漏洞修复报告.docx)
 - [Day8 SSTI漏洞修复报告](day8-ssti漏洞修复报告.docx)
+- [Day9 命令执行漏洞修复报告](day9-命令执行漏洞修复报告.docx)
 
 ## 项目结构
 
@@ -99,6 +105,7 @@ cd /opt/Class01/ && python3 app.py
 │   ├── upload.html         # 头像上传页
 │   ├── profile.html        # 个人中心（含充值、修改密码功能）
 │   ├── change_password.html# 修改密码（旧版，不再使用）
+│   ├── ping.html           # Ping 网络诊断页
 │   ├── admin_users.html    # 管理员用户管理页
 │   └── error.html          # 错误提示页
 ├── static/
@@ -113,7 +120,9 @@ cd /opt/Class01/ && python3 app.py
 ├── hunter_search.py        # 鹰图搜索脚本
 ├── generate_report.py      # 报告生成工具
 ├── day7-CSRF漏洞修复报告.docx
-└── day8-ssti漏洞修复报告.docx
+├── day8-ssti漏洞修复报告.docx
+├── day9-命令执行漏洞修复报告.docx
+└── SECURITY_REPORT.md
 ```
 
 ## 技术栈
@@ -145,3 +154,8 @@ cd /opt/Class01/ && python3 app.py
 - **SSTI-002 /feedback POST 路由注入漏洞**：同时修复 name 和 message 两个注入点，将 f-string 拼接改为模板变量传递
 - **新增 /welcome 欢迎页**：支持 URL 参数 name 自定义欢迎语
 - **新增 /feedback 反馈页**：支持 GET 表单展示和 POST 结果展示
+
+### Day9 - 命令执行漏洞修复
+- **CMD-001 Ping 功能命令注入**：移除 f-string 命令拼接 + shell=True，改用参数列表方式调用 subprocess.check_output()
+- **CMD-002 用户输入无校验**：增加 IP 地址正则白名单校验和域名格式校验，IP 每段范围 0-255 检查
+- **新增 /ping Ping 网络诊断功能**：需登录访问，蓝底白字风格控制台输出页面
