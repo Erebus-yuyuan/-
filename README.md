@@ -104,7 +104,11 @@ cd /opt/Class01/ && python3 app.py
 │   ├── day6-文件包含漏洞修复报告.docx
 │   ├── day7-CSRF漏洞修复报告.docx
 │   ├── day8-ssti漏洞修复报告.docx
-│   └── day9-命令执行漏洞修复报告.docx
+│   ├── day9-命令执行漏洞修复报告.docx
+│   ├── SECURITY_REPORT.md
+│   ├── WAF_Bypass_Report.md
+│   ├── security_report_v2.0.docx
+│   └── generate_report.py      # 报告生成工具
 ├── templates/              # HTML 模板
 │   ├── base.html           # 基础布局（导航栏含头像）
 │   ├── login.html          # 登录页
@@ -122,11 +126,6 @@ cd /opt/Class01/ && python3 app.py
 ├── data/
 │   └── users.db            # SQLite 用户数据库
 ├── hunter_search.py        # 鹰图搜索脚本
-├── generate_report.py      # 报告生成工具
-├── day7-CSRF漏洞修复报告.docx
-├── day8-ssti漏洞修复报告.docx
-├── day9-命令执行漏洞修复报告.docx
-└── SECURITY_REPORT.md
 ```
 
 ## 技术栈
