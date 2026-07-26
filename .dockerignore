@@ -1,0 +1,13 @@
+.git/
+.gitignore
+__pycache__/
+*.pyc
+.env
+*.db
+logs/
+uploads/*
+!uploads/.gitkeep
+.DS_Store
+*.docx
+*.md
+*.pyc

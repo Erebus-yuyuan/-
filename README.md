@@ -1,6 +1,6 @@
 # Flask 用户信息管理系统（安全靶场）
 
-> 版本：命令执行漏洞修复（Day9）
+> 版本：Day9 - 全面安全加固 + 工程化改进
 
 一个基于 Flask 的 Web 安全靶场项目，包含完整的用户管理功能，用于 Web 安全教学与漏洞复现。
 
@@ -69,8 +69,12 @@ cd /opt/Class01/ && python3 app.py
   - 用户管理 -> 查看详情 -> 返回上一页（而非直接回首页）
 - CSRF Token 保护（所有 POST 表单）
 - 密码哈希存储（bcrypt）
-- 随机 Secret Key（256位）
-- 会话安全配置（HttpOnly + SameSite=Lax）
+- 集中配置管理（config.py，支持环境变量覆盖）
+- 会话安全配置（HttpOnly + SameSite=Lax + 2 小时自动过期）
+- 内容安全策略（CSP）头（阻止 XSS 和资源注入）
+- 操作审计日志（登录、密码修改、Ping、管理员操作等敏感操作全记录）
+- Ping 频率限制（每个 IP 每分钟最多 10 次）
+- 余额精度修复（避免浮点数显示 `xxx.0` 问题）
 
 ## 权限体系
 
@@ -95,6 +99,17 @@ cd /opt/Class01/ && python3 app.py
 ```
 /opt/Class01/
 ├── app.py                  # Flask 主程序
+├── config.py               # 集中配置管理（环境变量覆盖）
+├── requirements.txt        # Python 依赖清单
+├── Dockerfile              # Docker 容器化部署
+├── .dockerignore           # Docker 构建忽略
+├── tests/                  # 单元测试
+│   ├── __init__.py
+│   ├── conftest.py         # 共享测试夹具
+│   ├── test_auth.py        # 认证模块测试（8 个用例）
+│   ├── test_ping.py        # Ping 模块测试（7 个用例）
+│   └── test_security.py    # 安全加固测试（7 个用例）
+├── logs/                   # 审计日志目录
 ├── pages/                  # 动态页面目录
 │   └── help.html           # 帮助中心页面
 ├── reports/                # 安全修复报告
@@ -108,7 +123,7 @@ cd /opt/Class01/ && python3 app.py
 │   ├── SECURITY_REPORT.md
 │   ├── WAF_Bypass_Report.md
 │   ├── security_report_v2.0.docx
-│   └── generate_report.py      # 报告生成工具
+│   └── generate_report.py  # 报告生成工具
 ├── templates/              # HTML 模板
 │   ├── base.html           # 基础布局（导航栏含头像）
 │   ├── login.html          # 登录页
@@ -158,7 +173,23 @@ cd /opt/Class01/ && python3 app.py
 - **新增 /welcome 欢迎页**：支持 URL 参数 name 自定义欢迎语
 - **新增 /feedback 反馈页**：支持 GET 表单展示和 POST 结果展示
 
-### Day9 - 命令执行漏洞修复
+### Day9 - 命令执行漏洞修复 + 全面安全加固
+
+**命令执行漏洞修复**
 - **CMD-001 Ping 功能命令注入**：移除 f-string 命令拼接 + shell=True，改用参数列表方式调用 subprocess.check_output()
 - **CMD-002 用户输入无校验**：增加 IP 地址正则白名单校验和域名格式校验，IP 每段范围 0-255 检查
 - **新增 /ping Ping 网络诊断功能**：需登录访问，蓝底白字风格控制台输出页面
+
+**安全加固增强**
+- **SEC-001 内容安全策略（CSP）**：全局添加 Content-Security-Policy 头，形成 XSS 纵深防御
+- **SEC-002 Session 过期机制**：添加 PERMANENT_SESSION_LIFETIME = 2 小时，防止会话长期有效
+- **SEC-003 操作审计日志**：记录登录成功/失败、退出、密码修改、Ping 执行、管理员搜索、头像上传、充值等敏感操作
+- **SEC-004 Ping 频率限制**：每个 IP 每分钟最多 10 次请求，防止滥用和内网探测
+- **SEC-005 余额浮点数精度修复**：使用 2 位小数舍入，避免显示 `xxx.0` 形式的浮点数
+
+**工程化改进**
+- **DEV-001 集中配置管理**：创建 config.py，所有硬编码配置集中管理，支持环境变量覆盖（SECRET_KEY、DB_DIR、SESSION_LIFETIME_HOURS 等）
+- **DEV-002 依赖锁定**：创建 requirements.txt，明确版本区间
+- **DEV-003 Docker 容器化**：创建 Dockerfile + .dockerignore，支持一行命令容器化部署
+- **DEV-004 单元测试**：创建 tests/ 测试目录，共 25 个测试用例覆盖认证、Ping 命令注入防护、安全头验证、审计日志、配置检查
+- **DEV-005 生产级运行**：支持 gunicorn 多 worker 生产部署

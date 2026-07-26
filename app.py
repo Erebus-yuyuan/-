@@ -3,6 +3,7 @@ import re
 import uuid
 import time
 import copy
+import math
 import sqlite3
 import secrets
 from functools import wraps
@@ -10,6 +11,36 @@ from urllib.parse import unquote
 from flask import Flask, render_template, render_template_string, request, redirect, session, send_from_directory, abort
 import subprocess, platform
 import bleach
+import logging
+import logging.handlers
+
+
+# ===== 配置导入 =====
+from config import Config
+cfg = Config()
+
+
+# ===== 审计日志系统 =====
+os.makedirs(cfg.AUDIT_LOG_DIR, exist_ok=True)
+audit_logger = logging.getLogger("audit")
+audit_logger.setLevel(logging.INFO)
+audit_handler = logging.handlers.RotatingFileHandler(
+    os.path.join(cfg.AUDIT_LOG_DIR, cfg.AUDIT_LOG_FILE),
+    maxBytes=cfg.AUDIT_LOG_MAX_BYTES,
+    backupCount=cfg.AUDIT_LOG_BACKUP_COUNT,
+    encoding="utf-8"
+)
+audit_handler.setFormatter(
+    logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+)
+audit_logger.addHandler(audit_handler)
+
+
+def audit_log(username, action, detail, level=logging.INFO):
+    """记录操作审计日志"""
+    from flask import request
+    ip = request.remote_addr or "unknown"
+    audit_logger.log(level, f"[{ip}] {username} - {action}: {detail}")
 
 
 ALLOWED_HTML_TAGS = [
@@ -58,51 +89,36 @@ from werkzeug.exceptions import RequestEntityTooLarge
 
 app = Flask(__name__)
 
-# ===== 安全加固 1：强随机 Secret Key =====
-# 通过环境变量设置，若未设置则自动生成随机密钥
-app.secret_key = os.environ.get(
-    "SECRET_KEY",
-    secrets.token_hex(32)
-)
+# ===== 安全加固 1：强随机 Secret Key + 集中配置 =====
+app.secret_key = cfg.SECRET_KEY
+app.permanent_session_lifetime = cfg.PERMANENT_SESSION_LIFETIME
 
 # ===== 安全加固 5：会话安全配置 =====
 app.config.update(
-    SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE='Lax',
-    SESSION_COOKIE_SECURE=False,  # 开发环境无 HTTPS，保持 False
-    MAX_CONTENT_LENGTH=16 * 1024 * 1024,  # 最大上传文件 16MB
+    PERMANENT_SESSION_LIFETIME=cfg.PERMANENT_SESSION_LIFETIME,
+    SESSION_COOKIE_HTTPONLY=cfg.SESSION_COOKIE_HTTPONLY,
+    SESSION_COOKIE_SAMESITE=cfg.SESSION_COOKIE_SAMESITE,
+    SESSION_COOKIE_SECURE=cfg.SESSION_COOKIE_SECURE,
+    MAX_CONTENT_LENGTH=cfg.MAX_CONTENT_LENGTH,
 )
 
 app.jinja_env.filters['sanitize'] = sanitize_html
 
 # ===== 上传文件存储目录（存放于 static 之外，防止直接静态访问） =====
-UPLOAD_DIR = os.path.join(app.root_path, "uploads")
+UPLOAD_DIR = os.path.join(app.root_path, cfg.UPLOAD_DIR)
 
 # ===== 扩展名白名单（仅允许图片格式） =====
-ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'}
+ALLOWED_EXTENSIONS = cfg.ALLOWED_EXTENSIONS
 
 # ===== MIME 类型白名单（辅助校验） =====
-ALLOWED_MIME_TYPES = {
-    'image/png',
-    'image/jpeg',
-    'image/gif',
-    'image/bmp',
-    'image/webp',
-    'image/x-icon',
-}
+ALLOWED_MIME_TYPES = cfg.ALLOWED_MIME_TYPES
 
 # ===== 文件魔数签名（用于文件内容真实性校验） =====
-IMAGE_SIGNATURES = {
-    b'\x89PNG\r\n\x1a\n': '.png',
-    b'\xff\xd8\xff': '.jpg',
-    b'GIF89a': '.gif',
-    b'GIF87a': '.gif',
-    b'BM': '.bmp',
-}
+IMAGE_SIGNATURES = cfg.IMAGE_SIGNATURES
 
 # WebP 特殊处理：前 4 字节 RIFF，偏移 8 处 WEBP
-WEBP_SIGNATURE = b'RIFF'
-WEBP_MARKER = b'WEBP'
+WEBP_SIGNATURE = cfg.WEBP_SIGNATURE
+WEBP_MARKER = cfg.WEBP_MARKER
 
 
 def sanitize_filename(filename):
@@ -320,10 +336,45 @@ USERS = {
 # ===== 安全加固 3：登录频率限制 =====
 # 基于 IP + 用户名 的双重限制
 LOGIN_LIMIT = {
-    "max_attempts": 5,           # 最大尝试次数
-    "lockout_duration": 300,     # 锁定时间（秒）= 5 分钟
-    "records": {}                # 记录 {"ip:username": {"count": int, "lockout_until": float}}
+    "max_attempts": cfg.LOGIN_MAX_ATTEMPTS,
+    "lockout_duration": cfg.LOGIN_LOCKOUT_DURATION,
+    "records": {}
 }
+
+# ===== Ping 频率限制 =====
+# 基于 IP 的滑动窗口限制，防止滥用
+PING_LIMIT = {
+    "max_requests": cfg.PING_MAX_REQUESTS,
+    "window_seconds": cfg.PING_WINDOW_SECONDS,
+    "records": {}
+}
+
+
+def check_ping_rate_limit(ip):
+    """检查 Ping 请求频率，返回 True 表示允许，False 表示超出限制"""
+    now = time.time()
+    window_start = now - PING_LIMIT["window_seconds"]
+    records = PING_LIMIT["records"]
+
+    # 清理过期记录
+    if ip in records:
+        records[ip] = [t for t in records[ip] if t > window_start]
+    else:
+        records[ip] = []
+
+    # 检查是否超出限制
+    if len(records[ip]) >= PING_LIMIT["max_requests"]:
+        return False
+
+    records[ip].append(now)
+    # 定期清理过期 IP
+    if len(records) > 1000:
+        cutoff = now - PING_LIMIT["window_seconds"]
+        PING_LIMIT["records"] = {
+            k: v for k, v in records.items()
+            if any(t > cutoff for t in v)
+        }
+    return True
 
 
 def is_login_locked(ip, username):
@@ -546,6 +597,7 @@ def login():
         if user and check_password_hash(user["password_hash"], password):
             # 验证成功
             record_login_attempt(client_ip, username, success=True)
+            audit_log(username, "登录成功", f"IP: {client_ip}")
             session["username"] = username
             sync_session_avatar(username)
             user_info = safe_user_info(username)
@@ -553,6 +605,7 @@ def login():
         else:
             # 验证失败
             record_login_attempt(client_ip, username, success=False)
+            audit_log(username, "登录失败", f"IP: {client_ip}", logging.WARNING)
             return render_template("login.html", error="用户名或密码错误！")
 
     return render_template("login.html")
@@ -561,6 +614,8 @@ def login():
 @app.route("/logout")
 def logout():
     """登出路由，清除session后重定向到首页"""
+    username = session.get("username", "未知")
+    audit_log(username, "退出登录", "")
     session.clear()
     return redirect("/")
 
@@ -836,6 +891,7 @@ def change_password():
 
     # 记录成功尝试
     record_login_attempt(client_ip, username + "_pwd", success=True)
+    audit_log(username, "密码修改成功", f"IP: {client_ip}")
 
     # 更新密码（同时更新 SQLite 和 USERS 字典）
     password_hash = generate_password_hash(new_password)
@@ -931,6 +987,7 @@ def upload():
             print(f"[upload] SQLite 同步头像失败: {e}")
 
         file_url = f"/uploads/{filename}"
+        audit_log(username, "上传头像成功", f"文件名: {filename}")
         return render_template("upload.html", success="文件上传成功！", file_url=file_url)
 
     return render_template("upload.html")
@@ -975,6 +1032,9 @@ def profile():
 def admin_users():
     """管理员用户管理 - 搜索并查看所有用户"""
     keyword = request.args.get("keyword", "").strip()
+    current_user = session.get("username", "unknown")
+    if keyword:
+        audit_log(current_user, "管理员搜索用户", f"关键词: {keyword}")
 
     user_list = []
     for username, info in USERS.items():
@@ -1013,10 +1073,16 @@ def recharge():
         return render_template("profile.html", error="充值金额必须大于零",
                                user=safe_user_info(current_username))
 
+    # 转换金额为整数分，避免浮点数精度问题（如 111107777867221.0）
+    amount_cents = int(round(amount * 100))
+
     # 只允许给当前登录用户充值（VULN-002 修复）
-    USERS[current_username]["balance"] += amount
+    USERS[current_username]["balance"] = round(
+        USERS[current_username]["balance"] + amount_cents / 100, 2
+    )
 
     # 同步更新 SQLite 数据库
+    audit_log(current_username, "充值成功", f"金额: {amount}")
     try:
         conn = sqlite3.connect("data/users.db")
         c = conn.cursor()
@@ -1034,6 +1100,8 @@ def recharge():
 @app.after_request
 def add_security_headers(response):
     """【安全修复】为所有响应添加安全头"""
+    # 内容安全策略（CSP）- 纵深防御
+    response.headers["Content-Security-Policy"] = cfg.CSP_POLICY
     # 禁用 MIME 类型嗅探
     response.headers["X-Content-Type-Options"] = "nosniff"
     # 防止点击劫持
@@ -1042,6 +1110,8 @@ def add_security_headers(response):
     response.headers["X-XSS-Protection"] = "1; mode=block"
     # 禁止浏览器自动检测和引用不安全的资源
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    # 明确声明编码和内容类型策略
+    response.headers["X-Content-Type-Options"] = "nosniff"
     return response
 
 
@@ -1107,6 +1177,13 @@ def ping():
     result = ""
     if request.method == "POST":
         ip = request.form.get("ip", "").strip()
+        client_ip = request.remote_addr or "unknown"
+
+        # 【安全加固】频率限制：每个 IP 每分钟最多执行 cfg.PING_MAX_REQUESTS 次
+        if not check_ping_rate_limit(client_ip):
+            audit_log(username, "Ping频率受限", f"IP: {client_ip}, 目标: {ip}", logging.WARNING)
+            result = "错误：请求过于频繁，请稍后再试"
+            return render_template("ping.html", result=result)
 
         # 【安全加固】白名单校验：仅允许合法 IP 地址或域名
         ip_pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
@@ -1125,6 +1202,7 @@ def ping():
                         timeout=30,
                         stderr=subprocess.STDOUT
                     ).decode("utf-8", errors="replace")
+                    audit_log(username, "Ping执行成功", f"目标: {ip}")
                 except subprocess.CalledProcessError as e:
                     result = e.output.decode("utf-8", errors="replace")
                 except subprocess.TimeoutExpired:
@@ -1138,6 +1216,7 @@ def ping():
                     timeout=30,
                     stderr=subprocess.STDOUT
                 ).decode("utf-8", errors="replace")
+                audit_log(username, "Ping执行成功", f"目标: {ip}")
             except subprocess.CalledProcessError as e:
                 result = e.output.decode("utf-8", errors="replace")
             except subprocess.TimeoutExpired:

@@ -8,7 +8,12 @@ __pycache__/
 
 # SQLite database (user data)
 data/
+!data/.gitkeep
 
 # User uploaded files
 uploads/
 static/uploads/
+
+# Runtime audit logs
+logs/
+!logs/.gitkeep
