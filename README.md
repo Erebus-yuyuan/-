@@ -141,8 +141,6 @@ cd /opt/Class01/ && python3 app.py
 ├── data/
 │   └── users.db            # SQLite 用户数据库
 ├── hunter_search.py        # 鹰图搜索脚本
-├── gen_internship_report.py # 实习报告生成脚本
-├── 四川大学本科实习报告-郭源-202414153.docx  # 本科实习报告
 ```
 
 ## 技术栈
